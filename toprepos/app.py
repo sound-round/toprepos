@@ -1,5 +1,10 @@
+#!/usr/bin/env python3
+
 import requests
 import os
+import asyncio
+import aiohttp
+import itertools
 from flask import Flask
 from flask import request
 import json
@@ -8,6 +13,7 @@ from functools import reduce
 from urllib.parse import urlparse
 from urllib.parse import parse_qs
 from dotenv import load_dotenv
+from datetime import datetime
 
 
 load_dotenv()
@@ -31,36 +37,26 @@ def format_repo(repo):
     return dict_
 
 
-# @app.route('/')
-# def index():
-#     return 'Hello, World!'
+async def fetch(url, params):
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                url, params=params, auth=aiohttp.BasicAuth(
+                    MY_NAME, TOKEN, encoding='utf-8'
+                )
+            ) as response:
+                return await response.json()
 
-
-def get_response(url):
-    full_response = []
-    params = {'page': 1, 'per_page': 100}
-
-    response = requests.get(url, params=params, auth=(MY_NAME, TOKEN))
-    response.raise_for_status()
-    full_response.append(json.loads(response.content))
-    if response.links.get('last'):
-        last_url = response.links['last']['url']
-        parsed_url = urlparse(last_url)
-        last_page = int(parse_qs(parsed_url.query)['page'][0])
-
-        for page_number in range(2, last_page + 1):
-            params['page'] = page_number
-            response = requests.get(url, params=params, auth=(MY_NAME, TOKEN))
-            response.raise_for_status()
-            full_response.append(json.loads(response.content))
-
-    flat_full_response = reduce(lambda a, b: a+b, full_response)
-
-    return flat_full_response
+async def get(url, i, full_response):
+    params = {'page': i}
+    response = await fetch(url, params)
+    full_response.append(response)
 
 
 @app.route('/api/top/<username>', methods=['GET'])
-def get_repos(username):
+def main(username):
+    # start = datetime.now()
+
+    full_response = []
     url = f'https://api.github.com/users/{username}/repos'
     limit = request.args.get('limit')
 
@@ -68,18 +64,20 @@ def get_repos(username):
         limit = 10
     limit = int(limit)
 
-    try:
-        response = get_response(url)
-    except requests.exceptions.HTTPError as errh:
-            return "An Http Error occurred:" + repr(errh)
-    except requests.exceptions.ConnectionError as errc:
-        return "An Error Connecting to the API occurred:" + repr(errc)
-    except requests.exceptions.Timeout as errt:
-        return "A Timeout Error occurred:" + repr(errt)
-    except requests.exceptions.RequestException as err:
-        return "An Unknown Error occurred" + repr(err)
 
-    repos = [format_repo(repo) for repo in response]
+
+    last_page = 5
+    requests = [get(url, i, full_response) for i in range(1, last_page + 1)]
+
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(asyncio.gather(*requests))
+    print(full_response)
+    flat_full_response = reduce(lambda a, b: a+b, full_response)
+    repos = [format_repo(repo) for repo in flat_full_response]
     sorted_repos = sorted(repos, key=lambda repo: -repo['stars'])
+
+    # finish = datetime.now()
+    # res = finish - start
 
     return jsonify(sorted_repos[:limit])
