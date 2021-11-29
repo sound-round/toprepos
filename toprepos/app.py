@@ -31,9 +31,9 @@ def format_repo(repo):
     return dict_
 
 
-@app.route('/')
-def index():
-    return 'Hello, World!'
+# @app.route('/')
+# def index():
+#     return 'Hello, World!'
 
 
 def get_response(url):
@@ -68,7 +68,17 @@ def get_repos(username):
         limit = 10
     limit = int(limit)
 
-    response = get_response(url)
+    try:
+        response = get_response(url)
+    except requests.exceptions.HTTPError as errh:
+            return "An Http Error occurred:" + repr(errh)
+    except requests.exceptions.ConnectionError as errc:
+        return "An Error Connecting to the API occurred:" + repr(errc)
+    except requests.exceptions.Timeout as errt:
+        return "A Timeout Error occurred:" + repr(errt)
+    except requests.exceptions.RequestException as err:
+        return "An Unknown Error occurred" + repr(err)
+
     repos = [format_repo(repo) for repo in response]
     sorted_repos = sorted(repos, key=lambda repo: -repo['stars'])
 
