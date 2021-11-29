@@ -43,16 +43,17 @@ def get_response(url):
     response = requests.get(url, params=params, auth=(MY_NAME, TOKEN))
     response.raise_for_status()
     full_response.append(json.loads(response.content))
+    if response.links.get('last'):
+        last_url = response.links['last']['url']
+        parsed_url = urlparse(last_url)
+        last_page = int(parse_qs(parsed_url.query)['page'][0])
 
-    last_url = response.links['last']['url']
-    parsed_url = urlparse(last_url)
-    last_page = int(parse_qs(parsed_url.query)['page'][0])
+        for page_number in range(2, last_page + 1):
+            params['page'] = page_number
+            response = requests.get(url, params=params, auth=(MY_NAME, TOKEN))
+            response.raise_for_status()
+            full_response.append(json.loads(response.content))
 
-    for page_number in range(2, last_page + 1):
-        params['page'] = page_number
-        response = requests.get(url, params=params, auth=(MY_NAME, TOKEN))
-        response.raise_for_status()
-        full_response.append(json.loads(response.content))
     flat_full_response = reduce(lambda a, b: a+b, full_response)
 
     return flat_full_response
