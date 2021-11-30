@@ -10,3 +10,4 @@ htmlcov/
 *.log
 *.sqlite3
 *.env
+*.db
