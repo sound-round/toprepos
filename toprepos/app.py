@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import requests as req
+import json
 import os
 import asyncio
 import aiohttp
@@ -65,9 +66,11 @@ def main(username):
         limit = LIMIT_DEFAULT
     limit = int(limit)
 
-    first_page_resp = req.head(url)
-
-    last_updated = first_page_resp.headers['date']
+    first_page_params = {'per_page': 1, 'page': 1, 'sort': 'updated'}
+    first_page_resp = req.get(url, params=first_page_params)
+    print('cont:', json.loads(first_page_resp.content)[0]['updated_at'])
+    # last_updated = first_page_resp.headers['date']
+    last_updated = json.loads(first_page_resp.content)[0]['updated_at']
 
     cached_repos = sql.get_repos(username, last_updated)
     if cached_repos:
