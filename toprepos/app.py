@@ -13,14 +13,14 @@ from dotenv import load_dotenv
 from datetime import datetime
 
 
-load_dotenv()
-
-
 MY_NAME = 'sound-round'
 TOKEN = os.environ.get('TOKEN')
 KEYS = ('id', 'name', "stargazers_count", 'html_url')
+LAST_PAGE_DEFAULT = 1
+LIMIT_DEFAULT = 10
 
 
+load_dotenv()
 app = Flask(__name__)
 
 
@@ -53,18 +53,17 @@ async def get_full_response(url, i, full_response):
 @app.route('/api/top/<username>', methods=['GET'])
 def main(username):
     start = datetime.now()
-    params = {'page': 1}
-    last_page = 1
+
+    last_page = LAST_PAGE_DEFAULT
     full_response = []
     url = f'https://api.github.com/users/{username}/repos'
     limit = request.args.get('limit')
 
     if not limit:
-        limit = 10
+        limit = LIMIT_DEFAULT
     limit = int(limit)
 
-    # TODO try to make async
-    first_page_resp = req.get(url, params, auth=(MY_NAME, TOKEN))
+    first_page_resp = req.head(url)
     if first_page_resp.links.get('last'):
         last_url = first_page_resp.links['last']['url']
         parsed_url = urlparse(last_url)
@@ -79,7 +78,7 @@ def main(username):
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     loop.run_until_complete(asyncio.gather(*requests))
-    print(full_response)
+
     flat_full_response = reduce(lambda a, b: a+b, full_response)
     repos = [format_repo(repo) for repo in flat_full_response]
     sorted_repos = sorted(repos, key=lambda repo: -repo['stars'])
