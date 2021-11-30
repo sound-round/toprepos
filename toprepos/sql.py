@@ -2,13 +2,20 @@ import sqlite3
 from datetime import datetime
 
 
+# def format_date(date):
+#     date_string = "2017-02-14T09:51:46.000-0600"
+#     date = 'Tue, 30 Nov 2021 15:22:48 GMT'
+# # I'm using date_string[:-9] to skip ".000-0600"
+# format_date = datetime.strptime(date, '%Y-%m-%dT%H:%M:%S.%f%z'))
+
+
 def create_tables():
     con = sqlite3.connect('cache.db')
     
     with con:
         cur = con.cursor()
         cur.execute('''CREATE TABLE IF NOT EXISTS users (
-                id bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+                id integer PRIMARY KEY AUTOINCREMENT,
                 username varchar UNIQUE,
                 updated_at timestamp
             );''')
@@ -16,20 +23,23 @@ def create_tables():
     with con:
         cur = con.cursor()
         cur.execute('''CREATE TABLE IF NOT EXISTS repos (
-                id bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
-                user_id bigint REFERENCES users(id),
+                id integer PRIMARY KEY AUTOINCREMENT,
+                user_id integer REFERENCES users(id),
                 repo_id integer,
                 name varchar,
                 stars integer,
-                html_url varchar,
+                html_url varchar
             );''')
 
     con.close()
 
 def get_user_id(cur, username):
-    cur.execute('''SELECT id FROM users WHERE username = (?);''', username)
-    return cur.fetchone()
-
+    cur.execute('''SELECT id FROM users WHERE username = (?);''', (username,))
+    result = cur.fetchone()
+    if not result:
+        return None
+    (user_id,) = result
+    return user_id
 
 def cache(username, repos):
     con = sqlite3.connect('cache.db')
@@ -41,13 +51,13 @@ def cache(username, repos):
     if user_id:
         with con:
             cur = con.cursor()
-            cur.execute('''DELETE FROM repos WHERE user_id = (?);''', user_id)
+            cur.execute('''DELETE FROM repos WHERE user_id = (?);''', (user_id,))
             cur.execute('''UPDATE users SET updated_at = (?) 
             WHERE username = (?);''', (datetime.now(), username))
     else:
         with con:
             cur = con.cursor()
-            cur.execute('''INSERT INTO users
+            cur.execute('''INSERT INTO users (username, updated_at)
                 VALUES (?, ?);''', (username, datetime.now()))
             user_id = get_user_id(cur, username)
 
@@ -71,10 +81,18 @@ def get_repos(username, date):
 
     with con:
         cur = con.cursor()
-        cur.execute('''SELECT updated_at FROM users WHERE username = (?);''', username)
-        updated_date = cur.fetchone()
-    
-    if not updated_date or date > updated_date:
+        cur.execute('''SELECT updated_at FROM users WHERE username = (?);''', (username,))
+        result = cur.fetchone()
+        if not result:
+            updated_at = None
+        else:
+            (updated_at,) = result
+    print('curr_date', date)
+    print('type:', type(date))
+    print('updated_at', updated_at)
+    print('type:', type(updated_at))
+    # breakpoint
+    if not updated_at or date <= updated_at:
         con.close()
         return None
     
@@ -82,9 +100,9 @@ def get_repos(username, date):
         cur = con.cursor()
         cur.execute('''SELECT repo_id, name, stars, html_url FROM users 
             JOIN repos ON users.id = user_id 
-            WHERE username=(?);''', username
+            WHERE username=(?);''', (username,)
         )
         repos = cur.fetchall()
-        print('repos:\n', repos)
+
     con.close()
     return repos
