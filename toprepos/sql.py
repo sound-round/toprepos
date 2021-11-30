@@ -2,11 +2,15 @@ import sqlite3
 from datetime import datetime
 
 
-# def format_date(date):
-#     date_string = "2017-02-14T09:51:46.000-0600"
-#     date = 'Tue, 30 Nov 2021 15:22:48 GMT'
-# # I'm using date_string[:-9] to skip ".000-0600"
-# format_date = datetime.strptime(date, '%Y-%m-%dT%H:%M:%S.%f%z'))
+def format_date(date):
+    # date = '2021-11-30T15:52:49Z'
+    format_date = datetime.strptime(date, '%Y-%m-%dT%H:%M:%SZ')
+    return format_date
+
+
+def format_timestamp(timestamp):
+    format_date = datetime.strptime(timestamp[:19], '%Y-%m-%d %H:%M:%S')
+    return format_date
 
 
 def create_tables():
@@ -53,12 +57,12 @@ def cache(username, repos):
             cur = con.cursor()
             cur.execute('''DELETE FROM repos WHERE user_id = (?);''', (user_id,))
             cur.execute('''UPDATE users SET updated_at = (?) 
-            WHERE username = (?);''', (datetime.now(), username))
+            WHERE username = (?);''', (datetime.utcnow(), username))
     else:
         with con:
             cur = con.cursor()
             cur.execute('''INSERT INTO users (username, updated_at)
-                VALUES (?, ?);''', (username, datetime.now()))
+                VALUES (?, ?);''', (username, datetime.utcnow()))
             user_id = get_user_id(cur, username)
 
     with con:
@@ -87,12 +91,8 @@ def get_repos(username, date):
             updated_at = None
         else:
             (updated_at,) = result
-    print('curr_date', date)
-    print('type:', type(date))
-    print('updated_at', updated_at)
-    print('type:', type(updated_at))
-    # breakpoint
-    if not updated_at or date <= updated_at:
+
+    if not updated_at or format_date(date) >= format_timestamp(updated_at):
         con.close()
         return None
     
