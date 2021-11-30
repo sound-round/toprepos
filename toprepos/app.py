@@ -3,6 +3,7 @@ import requests as req
 import os
 import asyncio
 import aiohttp
+from toprepos import sql
 from flask import Flask
 from flask import request
 from flask import jsonify
@@ -53,6 +54,7 @@ async def get_full_response(url, i, full_response):
 @app.route('/api/top/<username>', methods=['GET'])
 def main(username):
     start = datetime.now()
+    sql.create_tables()
 
     last_page = LAST_PAGE_DEFAULT
     full_response = []
@@ -64,6 +66,26 @@ def main(username):
     limit = int(limit)
 
     first_page_resp = req.head(url)
+
+    last_updated = first_page_resp.headers['date']
+
+    cached_repos = sql.get_repos(username, last_updated)
+    if cached_repos:
+        repos = []
+        for repo in cached_repos:
+            dict_ = {}
+            dict_['id'] = repo[0]
+            dict_['name'] = repo[1]
+            dict_['stars'] = repo[2]
+            dict_['html_url'] = repo[3]
+            repos.append(dict_)
+        sorted_repos = sorted(repos, key=lambda repo: (-repo['stars'], repo['name']))
+
+        finish = datetime.now()
+        res = finish - start
+        print('pulled from cache')
+        return jsonify(sorted_repos[:limit], str(res))
+
     if first_page_resp.links.get('last'):
         last_url = first_page_resp.links['last']['url']
         parsed_url = urlparse(last_url)
@@ -81,8 +103,9 @@ def main(username):
 
     flat_full_response = reduce(lambda a, b: a+b, full_response)
     repos = [format_repo(repo) for repo in flat_full_response]
-    sorted_repos = sorted(repos, key=lambda repo: -repo['stars'])
-
+    sorted_repos = sorted(repos, key=lambda repo: (-repo['stars'], repo['name']))
+    sql.cache(username, sorted_repos)
+    print('cached')
     finish = datetime.now()
     res = finish - start
 
