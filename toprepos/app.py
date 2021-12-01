@@ -36,6 +36,18 @@ def format_repo(repo):
     return dict_
 
 
+def format_cached_repos(cached_repos):
+    repos = []
+    for repo in cached_repos:
+        dict_ = {}
+        dict_['id'] = repo[0]
+        dict_['name'] = repo[1]
+        dict_['stars'] = repo[2]
+        dict_['html_url'] = repo[3]
+        repos.append(dict_)
+    return repos
+
+
 async def get_page_response(url, params):
     async with aiohttp.ClientSession() as session:
         async with session.get(
@@ -68,21 +80,18 @@ def main(username):
 
     first_page_params = {'per_page': 1, 'page': 1, 'sort': 'updated'}
     first_page_resp = req.get(url, params=first_page_params)
-    print('cont:', json.loads(first_page_resp.content)[0]['updated_at'])
-    # last_updated = first_page_resp.headers['date']
-    last_updated = json.loads(first_page_resp.content)[0]['updated_at']
 
-    cached_repos = sql.get_repos(username, last_updated)
+    content = json.loads(first_page_resp.content)
+    if not content:
+        return jsonify(f"{username} doesn't have any public repositories yet")
+    updated_at = content[0]['updated_at']
+
+    cached_repos = sql.get_repos(username, updated_at)
     if cached_repos:
-        repos = []
-        for repo in cached_repos:
-            dict_ = {}
-            dict_['id'] = repo[0]
-            dict_['name'] = repo[1]
-            dict_['stars'] = repo[2]
-            dict_['html_url'] = repo[3]
-            repos.append(dict_)
-        sorted_repos = sorted(repos, key=lambda repo: (-repo['stars'], repo['name']))
+        repos = format_cached_repos(cached_repos)
+        sorted_repos = sorted(
+            repos, key=lambda repo: (-repo['stars'], repo['name'])
+        )
 
         finish = datetime.now()
         res = finish - start
@@ -106,7 +115,9 @@ def main(username):
 
     flat_full_response = reduce(lambda a, b: a+b, full_response)
     repos = [format_repo(repo) for repo in flat_full_response]
-    sorted_repos = sorted(repos, key=lambda repo: (-repo['stars'], repo['name']))
+    sorted_repos = sorted(
+        repos, key=lambda repo: (-repo['stars'], repo['name'])
+    )
     sql.cache(username, sorted_repos)
     print('cached')
     finish = datetime.now()
