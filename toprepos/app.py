@@ -1,13 +1,11 @@
-#!/usr/bin/env python3
+import sqlite3
 import requests as req
 import json
 import os
 import asyncio
 import aiohttp
 from toprepos import sql
-from flask import Flask
-from flask import request
-from flask import jsonify
+from flask import Flask, jsonify, request
 from functools import reduce
 from urllib.parse import urlparse
 from urllib.parse import parse_qs
@@ -15,8 +13,8 @@ from dotenv import load_dotenv
 from datetime import datetime
 
 
-MY_NAME = 'sound-round'
-TOKEN = os.environ.get('TOKEN')
+MY_NAME = 'sound-round'  # TODO delete
+TOKEN = os.environ.get('TOKEN')   # TODO delete
 KEYS = ('id', 'name', "stargazers_count", 'html_url')
 LAST_PAGE_DEFAULT = 1
 LIMIT_DEFAULT = 10
@@ -64,8 +62,13 @@ async def get_full_response(url, i, full_response):
     full_response.append(response)
 
 
+@app.errorhandler(503)
+def resource_not_found(e):
+    return jsonify(error=str(e)), 503
+
+
 @app.route('/api/top/<username>', methods=['GET'])
-def main(username):
+def get_top_repos(username):
     start = datetime.now()
     sql.create_tables()
 
@@ -79,14 +82,23 @@ def main(username):
     limit = int(limit)
 
     first_page_params = {'per_page': 1, 'page': 1, 'sort': 'updated'}
-    first_page_resp = req.get(url, params=first_page_params)
+    try:
+        first_page_resp = req.get(url, params=first_page_params)
+        first_page_resp.raise_for_status()
+    except req.exceptions.RequestException as e:
+        return jsonify(str(e))
 
     content = json.loads(first_page_resp.content)
     if not content:
-        return jsonify(f"{username} doesn't have any public repositories yet")
+        return jsonify(content)
+
     updated_at = content[0]['updated_at']
 
-    cached_repos = sql.get_repos(username, updated_at)
+    try:
+        cached_repos = sql.get_repos(username, updated_at)
+    except sqlite3.Error as e:
+        return jsonify('SQLite3 error:', str(e))
+
     if cached_repos:
         repos = format_cached_repos(cached_repos)
         sorted_repos = sorted(
@@ -111,14 +123,24 @@ def main(username):
 
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    loop.run_until_complete(asyncio.gather(*requests))
+
+    try:
+        loop.run_until_complete(
+            asyncio.gather(*requests, return_exceptions=True)
+        )
+    except aiohttp.web.HTTPException as e:
+        return jsonify(str(e))
 
     flat_full_response = reduce(lambda a, b: a+b, full_response)
     repos = [format_repo(repo) for repo in flat_full_response]
     sorted_repos = sorted(
         repos, key=lambda repo: (-repo['stars'], repo['name'])
     )
-    sql.cache(username, sorted_repos)
+    try:
+        sql.cache(username, sorted_repos)
+    except sqlite3.Error as e:
+        return jsonify('SQLite3 error:', str(e))
+
     print('cached')
     finish = datetime.now()
     res = finish - start
