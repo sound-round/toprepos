@@ -71,7 +71,7 @@ def get_repos(username, date):
             '''SELECT updated_at FROM repos WHERE username = (?);''',
             (username,)
         )
-        result = cur.fetchone()git 
+        result = cur.fetchone()
         if not result:
             updated_at = None
         else:

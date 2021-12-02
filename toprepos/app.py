@@ -5,12 +5,13 @@ import os
 import asyncio
 import aiohttp
 from toprepos import sql
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, make_response
 from functools import reduce
 from urllib.parse import urlparse
 from urllib.parse import parse_qs
 from dotenv import load_dotenv
 from datetime import datetime
+
 
 
 load_dotenv()
@@ -21,6 +22,36 @@ TOKEN = os.environ.get('TOKEN')   # TODO delete
 KEYS = ('id', 'name', "stargazers_count", 'html_url')
 LAST_PAGE_DEFAULT = 1
 LIMIT_DEFAULT = 10
+CONNECTION_ERROR = {
+        "status_code": 503,
+        "name": 'ConnectionError',
+        "description": 'Server is not available.',
+    }
+HTTP_ERROR = {
+        "status_code": 404,
+        "name": 'Not Found',
+        "description": 'URL not found',
+    }
+REQUEST_ERROR = {
+        "status_code": 500,
+        "name": 'Request error',
+        "description": 'Something went wrong during request',
+    }
+PROGRAMMING_ERROR = {
+        "status_code": 500,
+        "name": 'SQL programming error',
+        "description": 'ProgrammingError occured',
+    }
+OPERATIONAL_ERROR = {
+        "status_code": 500,
+        "name": 'SQL operational error',
+        "description": 'OperationalError occured',
+    }
+SQL_ERROR =  {
+        "status_code": 500,
+        "name": 'SQL error',
+        "description": 'SQL error occured',
+    }
 
 
 app = Flask(__name__)
@@ -34,18 +65,6 @@ def format_repo(repo):
             continue
         dict_[key] = repo[key]
     return dict_
-
-
-def format_cached_repos(cached_repos):
-    repos = []
-    for repo in cached_repos:
-        dict_ = {}
-        dict_['id'] = repo[0]
-        dict_['name'] = repo[1]
-        dict_['stars'] = repo[2]
-        dict_['html_url'] = repo[3]
-        repos.append(dict_)
-    return repos
 
 
 async def get_page_response(url, params):
@@ -67,8 +86,22 @@ async def get_full_response(url, i, full_response):
 def get_from_cache(username, updated_at):
     try:
         cached_repos = sql.get_repos(username, updated_at)
-    except sqlite3.Error as e:
-        return jsonify('SQLite3 error:', str(e))
+    except sqlite3.ProgrammingError:
+        response_data = PROGRAMMING_ERROR
+        response = make_response(response_data, 500)
+        response.content_type = "application/json"
+        return response
+    except sqlite3.OperationalError:
+        response_data = OPERATIONAL_ERROR
+        response = make_response(response_data, 500)
+        response.content_type = "application/json"
+        return response
+    except sqlite3.Error:
+        response_data = SQL_ERROR
+        response = make_response(response_data, 500)
+        response.content_type = "application/json"
+        return response
+
     if cached_repos:
         sorted_repos = sorted(
             json.loads(
@@ -97,8 +130,22 @@ def get_from_github(url, response, full_response, last_page):
         loop.run_until_complete(
             asyncio.gather(*requests, return_exceptions=True)
         )
-    except aiohttp.web.HTTPException as e:
-        return jsonify(str(e))
+    except aiohttp.web.HTTPServerUnavailable:
+        response_data = CONNECTION_ERROR
+        response = make_response(response_data, 503)
+        response.content_type = "application/json"
+        return response
+    except aiohttp.web.HTTPNotFound:
+        response_data = HTTP_ERROR
+        response = make_response(response_data, 404)
+        response.content_type = "application/json"
+        return response
+    except aiohttp.web.HTTPException:
+        response_data = REQUEST_ERROR
+        response = make_response(response_data)
+        response.content_type = "application/json"
+        return response
+
 
     flat_full_response = reduce(lambda a, b: a+b, full_response)
     repos = [format_repo(repo) for repo in flat_full_response]
@@ -136,8 +183,21 @@ def get_top_repos(username):
             url, params=first_page_params, auth=(LOGIN, TOKEN),
         )
         first_page_response.raise_for_status()
-    except req.exceptions.RequestException as e:
-        return jsonify(str(e))
+    except req.ConnectionError:
+        response_data = CONNECTION_ERROR
+        response = make_response(response_data, 503)
+        response.content_type = "application/json"
+        return response
+    except req.HTTPError:
+        response_data = HTTP_ERROR
+        response = make_response(response_data, 404)
+        response.content_type = "application/json"
+        return response
+    except req.exceptions.RequestException:
+        response_data = REQUEST_ERROR
+        response = make_response(response_data)
+        response.content_type = "application/json"
+        return response
 
     content = json.loads(first_page_response.content)
     if not content:
