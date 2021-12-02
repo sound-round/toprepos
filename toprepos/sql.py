@@ -20,32 +20,25 @@ def create_tables():
 
     with con:
         cur = con.cursor()
-        cur.execute('''CREATE TABLE IF NOT EXISTS users (
-                id integer PRIMARY KEY AUTOINCREMENT,
-                username varchar UNIQUE,
+        cur.execute('''CREATE TABLE IF NOT EXISTS repos (
+                username varchar PRIMARY KEY,
+                cached_repos text,
                 updated_at timestamp
             );''')
 
-    with con:
-        cur = con.cursor()
-        cur.execute('''CREATE TABLE IF NOT EXISTS repos (
-                id integer PRIMARY KEY AUTOINCREMENT,
-                user_id integer REFERENCES users(id),
-                repo_id integer,
-                name varchar,
-                stars integer,
-                html_url varchar
-            );''')
+
     con.close()
 
 
-def get_user_id(cur, username):
-    cur.execute('''SELECT id FROM users WHERE username = (?);''', (username,))
-    result = cur.fetchone()
+def get_user(cur, username):
+    cur.execute(
+        '''SELECT * FROM repos WHERE username = (?);''', (username,)
+    )
+    result = cur.fetchall()
     if not result:
         return None
-    (user_id,) = result
-    return user_id
+    (user,) = result
+    return user
 
 
 def cache(username, repos):
@@ -53,33 +46,19 @@ def cache(username, repos):
 
     with con:
         cur = con.cursor()
-        user_id = get_user_id(cur, username)
+        user = get_user(cur, username)
 
-    if user_id:
+    if user:
         with con:
             cur = con.cursor()
-            cur.execute(
-                '''DELETE FROM repos WHERE user_id = (?);''', (user_id,)
-            )
-            cur.execute('''UPDATE users SET updated_at = (?)
-            WHERE username = (?);''', (datetime.utcnow(), username))
+            cur.execute('''UPDATE repos SET cached_repos = (?), updated_at = (?)
+            WHERE username = (?);''', (repos, datetime.utcnow(), username))
     else:
         with con:
             cur = con.cursor()
-            cur.execute('''INSERT INTO users (username, updated_at)
-                VALUES (?, ?);''', (username, datetime.utcnow()))
-            user_id = get_user_id(cur, username)
+            cur.execute('''INSERT INTO repos (username, cached_repos, updated_at)
+                VALUES (?, ?, ?);''', (username, str(repos), datetime.utcnow()))
 
-    with con:
-        cur = con.cursor()
-        for repo in repos:
-            values = (
-                user_id, repo['id'], repo['name'],
-                repo['stars'], repo['html_url'],
-            )
-            cur.execute('''INSERT INTO repos
-                (user_id, repo_id, name, stars, html_url)
-                VALUES (?, ?, ?, ?, ?);''',  values)
     con.close()
 
 
@@ -89,10 +68,10 @@ def get_repos(username, date):
     with con:
         cur = con.cursor()
         cur.execute(
-            '''SELECT updated_at FROM users WHERE username = (?);''',
+            '''SELECT updated_at FROM repos WHERE username = (?);''',
             (username,)
         )
-        result = cur.fetchone()
+        result = cur.fetchone()git 
         if not result:
             updated_at = None
         else:
@@ -101,6 +80,7 @@ def get_repos(username, date):
     repo_updated_at = format_date(date)
     if updated_at:
         cache_updated_at = format_timestamp(updated_at)
+
     if not updated_at or repo_updated_at > cache_updated_at\
             or datetime.utcnow() - cache_updated_at > LIFETIME:
         con.close()
@@ -109,11 +89,10 @@ def get_repos(username, date):
     with con:
         cur = con.cursor()
         cur.execute(
-            '''SELECT repo_id, name, stars, html_url FROM users
-            JOIN repos ON users.id = user_id
+            '''SELECT cached_repos FROM repos
             WHERE username=(?);''', (username,)
         )
-        repos = cur.fetchall()
+        (repos,) = cur.fetchone()
 
     con.close()
     return repos
