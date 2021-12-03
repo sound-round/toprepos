@@ -1,18 +1,8 @@
 import sqlite3
-from datetime import datetime, timedelta
+import time
 
 
-LIFETIME = timedelta(hours=1)
-
-
-def format_date(date):
-    format_date = datetime.strptime(date, '%Y-%m-%dT%H:%M:%SZ')
-    return format_date
-
-
-def format_timestamp(timestamp):
-    format_date = datetime.strptime(timestamp[:19], '%Y-%m-%d %H:%M:%S')
-    return format_date
+LIFETIME = 3600
 
 
 def create_tables():
@@ -20,19 +10,26 @@ def create_tables():
 
     with con:
         cur = con.cursor()
-        cur.execute('''CREATE TABLE IF NOT EXISTS repos (
+        cur.execute(
+            '''
+            CREATE TABLE IF NOT EXISTS repos (
                 username varchar PRIMARY KEY,
                 cached_repos text,
                 updated_at timestamp
-            );''')
-
-
+            );'''
+        )
     con.close()
 
 
-def get_user(cur, username):
+def get_user(con, username):
+    cur = con.cursor()
     cur.execute(
-        '''SELECT * FROM repos WHERE username = (?);''', (username,)
+        '''
+        SELECT *
+        FROM repos
+        WHERE username = (?);
+        ''',
+        (username,)
     )
     result = cur.fetchall()
     if not result:
@@ -41,58 +38,74 @@ def get_user(cur, username):
     return user
 
 
+def get_record(con, username):
+    cur = con.cursor()
+    cur.execute(
+        '''
+        SELECT cached_repos, updated_at
+        FROM repos WHERE username = (?);
+        ''',
+        (username,)
+    )
+    record = cur.fetchone()
+    return record
+
+
+def insert_record(con, repos, username):
+    cur = con.cursor()
+    cur.execute(
+        '''
+        INSERT INTO repos (username, cached_repos, updated_at)
+        VALUES (?, ?, ?);
+        ''',
+        (username, str(repos), time.time())
+    )
+
+
+def update_record(con, repos, username):
+    cur = con.cursor()
+    cur.execute(
+        '''
+        UPDATE repos
+        SET cached_repos = (?), updated_at = (?)
+        WHERE username = (?);
+        ''',
+        (str(repos), time.time(), username)
+    )
+
+
 def cache(username, repos):
     con = sqlite3.connect('cache.db')
 
     with con:
-        cur = con.cursor()
-        user = get_user(cur, username)
+        user = get_user(con, username)
 
-    if user:
-        with con:
-            cur = con.cursor()
-            cur.execute('''UPDATE repos SET cached_repos = (?), updated_at = (?)
-            WHERE username = (?);''', (repos, datetime.utcnow(), username))
-    else:
-        with con:
-            cur = con.cursor()
-            cur.execute('''INSERT INTO repos (username, cached_repos, updated_at)
-                VALUES (?, ?, ?);''', (username, str(repos), datetime.utcnow()))
+        if user:
+            update_record(con, repos, username)
+        else:
+            insert_record(con, repos, username)
 
     con.close()
 
 
-def get_repos(username, date):
+def get_repos(username, repo_updated_at):
     con = sqlite3.connect('cache.db')
 
-    with con:
-        cur = con.cursor()
-        cur.execute(
-            '''SELECT updated_at FROM repos WHERE username = (?);''',
-            (username,)
-        )
-        result = cur.fetchone()
-        if not result:
-            updated_at = None
-        else:
-            (updated_at,) = result
-
-    repo_updated_at = format_date(date)
-    if updated_at:
-        cache_updated_at = format_timestamp(updated_at)
-
-    if not updated_at or repo_updated_at > cache_updated_at\
-            or datetime.utcnow() - cache_updated_at > LIFETIME:
+    record = get_record(con, username)
+    print('record', record)
+    if not record:
         con.close()
         return None
 
-    with con:
-        cur = con.cursor()
-        cur.execute(
-            '''SELECT cached_repos FROM repos
-            WHERE username=(?);''', (username,)
-        )
-        (repos,) = cur.fetchone()
+    (cached_repos, cache_updated_at) = record
 
+    if repo_updated_at > cache_updated_at\
+            or time.time() - cache_updated_at > LIFETIME:
+        con.close()
+        return None
+        # чистить кеш не надо, так как тогда появится
+        # одна доп операция удаления(дольше по времени)
+        # сейчас выполняется либо обновление,
+        # либо вставка (будет удаление + вставка)
     con.close()
-    return repos
+    return cached_repos
