@@ -4,6 +4,7 @@ import json
 import os
 import asyncio
 import aiohttp
+import time
 from toprepos import sql
 from flask import Flask, jsonify, request, make_response
 from functools import reduce
@@ -11,7 +12,6 @@ from urllib.parse import urlparse
 from urllib.parse import parse_qs
 from dotenv import load_dotenv
 from datetime import datetime
-
 
 
 load_dotenv()
@@ -57,6 +57,12 @@ SQL_ERROR =  {
 app = Flask(__name__)
 
 
+def format_to_unix_time(date):
+    format_date = datetime.strptime(date, '%Y-%m-%dT%H:%M:%SZ')
+    unix_time = time.mktime(format_date.timetuple())
+    return unix_time
+
+
 def format_repo(repo):
     dict_ = {}
     for key in KEYS:
@@ -84,24 +90,9 @@ async def get_full_response(url, i, full_response):
 
 
 def get_from_cache(username, updated_at):
-    try:
-        cached_repos = sql.get_repos(username, updated_at)
-    except sqlite3.ProgrammingError:
-        response_data = PROGRAMMING_ERROR
-        response = make_response(response_data, 500)
-        response.content_type = "application/json"
-        return response
-    except sqlite3.OperationalError:
-        response_data = OPERATIONAL_ERROR
-        response = make_response(response_data, 500)
-        response.content_type = "application/json"
-        return response
-    except sqlite3.Error:
-        response_data = SQL_ERROR
-        response = make_response(response_data, 500)
-        response.content_type = "application/json"
-        return response
 
+    cached_repos = sql.get_repos(username, updated_at)
+    
     if cached_repos:
         sorted_repos = sorted(
             json.loads(
@@ -163,7 +154,22 @@ def save_to_cache(username, repos):
 
 
 @app.route('/api/top/<username>', methods=['GET'])
-def get_top_repos(username):
+# def get_top_repos(username):
+#     try:
+#         return get_top_repos_internal(username)
+#     except BaseException as e:
+#         pass
+#         response = make_response(
+#             {
+#                 'status_code': 500,
+#                 'name': 'internal server error',
+#                 'description': str(e),
+#             }
+            
+#         )
+#         response.content_type = "application/json"
+#         return response
+def get_top_repos_internal(username):   
     start = datetime.now()
 
     sql.create_tables()
@@ -201,12 +207,32 @@ def get_top_repos(username):
 
     content = json.loads(first_page_response.content)
     if not content:
-        return jsonify(content)
+        return jsonify([])
 
     updated_at = content[0]['updated_at']
+    try:
+        cached_top_repos = get_from_cache(username, format_to_unix_time(updated_at))
+    except sqlite3.ProgrammingError as e:
+        response_data = {
+            "status_code": 500,
+            "name": 'SQL programming error',
+            "description": str(e),
+        }
+        response = make_response(response_data, 500)
+        response.content_type = "application/json"
+        return response
+    except sqlite3.OperationalError:
+        response_data = OPERATIONAL_ERROR
+        response = make_response(response_data, 500)
+        response.content_type = "application/json"
+        return response
+    except sqlite3.Error:
+        response_data = SQL_ERROR
+        response = make_response(response_data, 500)
+        response.content_type = "application/json"
+        return response
 
-    cached_top_repos = get_from_cache(username, updated_at)
-
+    print('repos!!:', cached_top_repos)
     if cached_top_repos:
 
         print('pulled from cache')
