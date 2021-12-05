@@ -116,7 +116,7 @@ def get_first_page(url):
     first_page_params = {'per_page': 1, 'page': 1, 'sort': 'updated'}
     if not LOGIN or not TOKEN:
         return req.get(
-        url, params=first_page_params,
+            url, params=first_page_params,
         )
     return req.get(
             url, params=first_page_params, auth=(LOGIN, TOKEN),
@@ -167,7 +167,7 @@ def get_top_repos_internal(username):
 
     first_page_response = get_first_page(url)
     first_page_response.raise_for_status()
-    
+
     content = json.loads(first_page_response.content)
     if not content:
         return jsonify([])

@@ -102,6 +102,6 @@ def get_repos(username, repo_updated_at):
             or time.time() - cache_updated_at > LIFETIME:
         con.close()
         return None
-        
+
     con.close()
     return cached_repos
