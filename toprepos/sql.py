@@ -92,7 +92,6 @@ def get_repos(username, repo_updated_at):
     con = sqlite3.connect('cache.db')
 
     record = get_record(con, username)
-    print('record', record)
     if not record:
         con.close()
         return None
@@ -103,9 +102,6 @@ def get_repos(username, repo_updated_at):
             or time.time() - cache_updated_at > LIFETIME:
         con.close()
         return None
-        # чистить кеш не надо, так как тогда появится
-        # одна доп операция удаления(дольше по времени)
-        # сейчас выполняется либо обновление,
-        # либо вставка (будет удаление + вставка)
+        
     con.close()
     return cached_repos

@@ -17,41 +17,11 @@ from datetime import datetime
 load_dotenv()
 
 
-LOGIN = os.environ.get('LOGIN')  # TODO delete
-TOKEN = os.environ.get('TOKEN')   # TODO delete
+LOGIN = os.environ.get('LOGIN')
+TOKEN = os.environ.get('TOKEN')
 KEYS = ('id', 'name', "stargazers_count", 'html_url')
 LAST_PAGE_DEFAULT = 1
 LIMIT_DEFAULT = 10
-CONNECTION_ERROR = {
-        "status_code": 503,
-        "name": 'ConnectionError',
-        "description": 'Server is not available.',
-    }
-HTTP_ERROR = {
-        "status_code": 404,
-        "name": 'Not Found',
-        "description": 'URL not found',
-    }
-REQUEST_ERROR = {
-        "status_code": 500,
-        "name": 'Request error',
-        "description": 'Something went wrong during request',
-    }
-PROGRAMMING_ERROR = {
-        "status_code": 500,
-        "name": 'SQL programming error',
-        "description": 'ProgrammingError occured',
-    }
-OPERATIONAL_ERROR = {
-        "status_code": 500,
-        "name": 'SQL operational error',
-        "description": 'OperationalError occured',
-    }
-SQL_ERROR =  {
-        "status_code": 500,
-        "name": 'SQL error',
-        "description": 'SQL error occured',
-    }
 
 
 app = Flask(__name__)
@@ -75,10 +45,17 @@ def format_repo(repo):
 
 async def get_page_response(url, params):
     async with aiohttp.ClientSession() as session:
-        async with session.get(
-            url, params=params, auth=aiohttp.BasicAuth(
+        if not LOGIN or not TOKEN:
+            async with session.get(
+                url, params=params,
+            ) as response:
+                return await response.json()
+
+        auth = aiohttp.BasicAuth(
                 LOGIN, TOKEN, encoding='utf-8'
-            )
+        )
+        async with session.get(
+            url, params=params, auth=auth,
         ) as response:
             return await response.json()
 
@@ -92,12 +69,11 @@ async def get_full_response(url, i, full_response):
 def get_from_cache(username, updated_at):
 
     cached_repos = sql.get_repos(username, updated_at)
-    
+
     if cached_repos:
         sorted_repos = sorted(
-            json.loads(
-                cached_repos.replace("'", "\"")), 
-                key=lambda repo: (-repo['stars'], repo['name']),
+            json.loads(cached_repos.replace("'", "\"")),
+            key=lambda repo: (-repo['stars'], repo['name']),
         )
         return sorted_repos
 
@@ -117,26 +93,9 @@ def get_from_github(url, response, full_response, last_page):
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
-    try:
-        loop.run_until_complete(
-            asyncio.gather(*requests, return_exceptions=True)
-        )
-    except aiohttp.web.HTTPServerUnavailable:
-        response_data = CONNECTION_ERROR
-        response = make_response(response_data, 503)
-        response.content_type = "application/json"
-        return response
-    except aiohttp.web.HTTPNotFound:
-        response_data = HTTP_ERROR
-        response = make_response(response_data, 404)
-        response.content_type = "application/json"
-        return response
-    except aiohttp.web.HTTPException:
-        response_data = REQUEST_ERROR
-        response = make_response(response_data)
-        response.content_type = "application/json"
-        return response
-
+    loop.run_until_complete(
+        asyncio.gather(*requests, return_exceptions=True)
+    )
 
     flat_full_response = reduce(lambda a, b: a+b, full_response)
     repos = [format_repo(repo) for repo in flat_full_response]
@@ -153,23 +112,46 @@ def save_to_cache(username, repos):
         return jsonify('SQLite3 error:', str(e))
 
 
+def get_first_page(url):
+    first_page_params = {'per_page': 1, 'page': 1, 'sort': 'updated'}
+    if not LOGIN or not TOKEN:
+        return req.get(
+        url, params=first_page_params,
+        )
+    return req.get(
+            url, params=first_page_params, auth=(LOGIN, TOKEN),
+        )
+
+
 @app.route('/api/top/<username>', methods=['GET'])
-# def get_top_repos(username):
-#     try:
-#         return get_top_repos_internal(username)
-#     except BaseException as e:
-#         pass
-#         response = make_response(
-#             {
-#                 'status_code': 500,
-#                 'name': 'internal server error',
-#                 'description': str(e),
-#             }
-            
-#         )
-#         response.content_type = "application/json"
-#         return response
-def get_top_repos_internal(username):   
+def get_top_repos(username):
+    try:
+        return get_top_repos_internal(username)
+    except req.HTTPError as e:
+        response = make_response(
+            {
+                'status_code': e.response.status_code,
+                'name': 'URL not found',
+                'description': str(e),
+            },
+            e.response.status_code
+        )
+        response.content_type = "application/json"
+        return response
+    except BaseException as e:
+        response = make_response(
+            {
+                'status_code': 500,
+                'name': 'internal server error',
+                'description': str(e),
+            },
+            500
+        )
+        response.content_type = "application/json"
+        return response
+
+
+def get_top_repos_internal(username):
     start = datetime.now()
 
     sql.create_tables()
@@ -183,62 +165,24 @@ def get_top_repos_internal(username):
         limit = LIMIT_DEFAULT
     limit = int(limit)
 
-    first_page_params = {'per_page': 1, 'page': 1, 'sort': 'updated'}
-    try:
-        first_page_response = req.get(
-            url, params=first_page_params, auth=(LOGIN, TOKEN),
-        )
-        first_page_response.raise_for_status()
-    except req.ConnectionError:
-        response_data = CONNECTION_ERROR
-        response = make_response(response_data, 503)
-        response.content_type = "application/json"
-        return response
-    except req.HTTPError:
-        response_data = HTTP_ERROR
-        response = make_response(response_data, 404)
-        response.content_type = "application/json"
-        return response
-    except req.exceptions.RequestException:
-        response_data = REQUEST_ERROR
-        response = make_response(response_data)
-        response.content_type = "application/json"
-        return response
-
+    first_page_response = get_first_page(url)
+    first_page_response.raise_for_status()
+    
     content = json.loads(first_page_response.content)
     if not content:
         return jsonify([])
 
     updated_at = content[0]['updated_at']
-    try:
-        cached_top_repos = get_from_cache(username, format_to_unix_time(updated_at))
-    except sqlite3.ProgrammingError as e:
-        response_data = {
-            "status_code": 500,
-            "name": 'SQL programming error',
-            "description": str(e),
-        }
-        response = make_response(response_data, 500)
-        response.content_type = "application/json"
-        return response
-    except sqlite3.OperationalError:
-        response_data = OPERATIONAL_ERROR
-        response = make_response(response_data, 500)
-        response.content_type = "application/json"
-        return response
-    except sqlite3.Error:
-        response_data = SQL_ERROR
-        response = make_response(response_data, 500)
-        response.content_type = "application/json"
-        return response
 
-    print('repos!!:', cached_top_repos)
+    cached_top_repos = get_from_cache(
+        username, format_to_unix_time(updated_at)
+    )
     if cached_top_repos:
 
         print('pulled from cache')
         finish = datetime.now()
         res = finish - start
-        
+
         return jsonify(cached_top_repos[:limit], str(res))
 
     top_repos = get_from_github(
