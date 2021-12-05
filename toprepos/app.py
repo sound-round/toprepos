@@ -25,6 +25,7 @@ LIMIT_DEFAULT = 10
 
 
 app = Flask(__name__)
+app.config['JSONIFY_PRETTYPRINT_REGULAR'] = True
 
 
 def format_to_unix_time(date):
