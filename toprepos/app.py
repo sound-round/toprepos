@@ -24,8 +24,20 @@ LAST_PAGE_DEFAULT = 1
 LIMIT_DEFAULT = 10
 
 
-app = Flask(__name__)
-app.config['JSONIFY_PRETTYPRINT_REGULAR'] = True
+def create_app(test_config=None):
+    app = Flask(__name__)
+    app.config.from_mapping(
+        DATABASE="cache.db",
+        JSONIFY_PRETTYPRINT_REGULAR=True,
+    )
+
+    if test_config:
+        app.config.update(test_config)
+
+    return app
+
+
+app = create_app()
 
 
 def format_to_unix_time(date):
@@ -106,13 +118,6 @@ def get_from_github(url, response, full_response, last_page):
     return sorted_repos
 
 
-def save_to_cache(username, repos):
-    try:
-        sql.cache(username, repos)
-    except sqlite3.Error as e:
-        return jsonify('SQLite3 error:', str(e))
-
-
 def get_first_page(url):
     first_page_params = {'per_page': 1, 'page': 1, 'sort': 'updated'}
     if not LOGIN or not TOKEN:
@@ -153,7 +158,6 @@ def get_top_repos(username):
 
 
 def get_top_repos_internal(username):
-    start = datetime.now()
 
     sql.create_tables()
 
@@ -179,21 +183,10 @@ def get_top_repos_internal(username):
         username, format_to_unix_time(updated_at)
     )
     if cached_top_repos:
-
-        print('pulled from cache')
-        finish = datetime.now()
-        res = finish - start
-
-        return jsonify(cached_top_repos[:limit], str(res))
+        return jsonify(cached_top_repos[:limit])
 
     top_repos = get_from_github(
         url, first_page_response, full_response, last_page,
     )
-
-    save_to_cache(username, top_repos)
-
-    print('cached')
-    finish = datetime.now()
-    res = finish - start
-
-    return jsonify(top_repos[:limit], str(res))
+    sql.save_to_cache(username, top_repos)
+    return jsonify(top_repos[:limit])
