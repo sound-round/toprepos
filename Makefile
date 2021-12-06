@@ -10,7 +10,7 @@ install:
 
 lint:
 	poetry run flake8 toprepos
-	# poetry run flake8 tests
+	poetry run flake8 tests
 
 test:
 	poetry run pytest -vv
