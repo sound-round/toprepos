@@ -1,12 +1,19 @@
 import sqlite3
 import time
+from flask import current_app
 
 
 LIFETIME = 3600
 
 
+def create_con():
+    return sqlite3.connect(
+            current_app.config["DATABASE"], 
+        )
+
+
 def create_tables():
-    con = sqlite3.connect('cache.db')
+    con = create_con()
 
     with con:
         cur = con.cursor()
@@ -74,8 +81,8 @@ def update_record(con, repos, username):
     )
 
 
-def cache(username, repos):
-    con = sqlite3.connect('cache.db')
+def save_to_cache(username, repos):
+    con = create_con()
 
     with con:
         user = get_user(con, username)
@@ -89,7 +96,7 @@ def cache(username, repos):
 
 
 def get_repos(username, repo_updated_at):
-    con = sqlite3.connect('cache.db')
+    con = create_con()
 
     record = get_record(con, username)
     if not record:
