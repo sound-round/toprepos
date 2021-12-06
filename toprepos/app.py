@@ -4,7 +4,7 @@ import os
 import asyncio
 import aiohttp
 import time
-from toprepos import sql
+from toprepos import db
 from flask import Flask, jsonify, request, make_response
 from functools import reduce
 from urllib.parse import urlparse
@@ -80,7 +80,7 @@ async def get_full_response(url, i, full_response):
 
 def get_from_cache(username, updated_at):
 
-    cached_repos = sql.get_repos(username, updated_at)
+    cached_repos = db.get_repos(username, updated_at)
 
     if cached_repos:
         sorted_repos = sorted(
@@ -158,7 +158,7 @@ def get_top_repos(username):
 
 def get_top_repos_internal(username):
 
-    sql.create_tables()
+    db.create_tables()
 
     last_page = LAST_PAGE_DEFAULT
     full_response = []
@@ -187,5 +187,5 @@ def get_top_repos_internal(username):
     top_repos = get_from_github(
         url, first_page_response, full_response, last_page,
     )
-    sql.save_to_cache(username, top_repos)
+    db.save_to_cache(username, top_repos)
     return jsonify(top_repos[:limit])
