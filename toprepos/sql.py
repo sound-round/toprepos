@@ -8,7 +8,7 @@ LIFETIME = 3600
 
 def create_con():
     return sqlite3.connect(
-            current_app.config["DATABASE"], 
+            current_app.config["DATABASE"]
         )
 
 
