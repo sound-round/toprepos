@@ -17,3 +17,6 @@ test:
 
 test-coverage:
 	poetry run pytest --cov=toprepos --cov-report xml tests/
+
+test-log:
+	poetry run pytest -vv -o log_cli=true --log-level debug
