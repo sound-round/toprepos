@@ -18,6 +18,7 @@ toprepos — a web service that uses the Github REST API and provides an API wit
 ## install
 Use the following command to install app:
 ```
+poetry config virtualenvs.in-project true
 make install
 ```
 
