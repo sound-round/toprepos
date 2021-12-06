@@ -1,19 +1,13 @@
-from werkzeug.datastructures import Headers
 import pytest
 import os
 import pathlib
-import asyncio
-import aiohttp
 import json
 import tempfile
-from toprepos.app import get_top_repos, app
+from toprepos.app import app
 from aioresponses import aioresponses
-import nest_asyncio
-import requests_mock
 
 
-
-nest_asyncio.apply()
+import os
 
 
 USERNAME = 'sound-round'
@@ -41,18 +35,25 @@ def get_fixture_path(fixture_name):
 
 @pytest.fixture(scope='module')
 def test_client():
+    db_fd, db_path = tempfile.mkstemp()
+    test_config = {'TESTING': True, 'DATABASE': db_path}
+    app.config.update(test_config)
+
     with app.test_client() as testing_client:
         yield testing_client 
 
+    os.close(db_fd)
+    os.unlink(db_path)
+
 
 def test_get_top_repos(requests_mock, test_client):
+    
     requests_mock.get(
         GITHUB_URL,
         content=read(get_fixture_path(GITHUB_API_RESPONSE), 'rb'),
         status_code=200,
     )
     with aioresponses() as mocked:
-
         mocked.get(
             GITHUB_URL,
             status=200,
